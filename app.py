@@ -1,86 +1,39 @@
 import streamlit as st
 import time
-from datetime import datetime
-import pandas as pd
 from sensor_reader import read_hardware_data as generate_data
 
-# Page Config
 st.set_page_config(page_title="Smart Health Monitor", layout="centered")
 
-# App Title and Subtitle
 st.title("🩺 Smart Band - Health Monitor")
-st.markdown("Real-time monitoring of **Oxygen Saturation (SpO2)** and **Heart Rate (BPM)**.")
-st.divider()
+st.markdown("Monitoring real-time **Oxygen Saturation (SpO2)** and **Heart Rate (BPM)**.")
 
-# Thresholds
-SPO2_ALERT_THRESHOLD = 95
-BPM_LOW = 60
-BPM_HIGH = 100
+# Placeholders for dynamic values
+spo2_display = st.empty()
+bpm_display = st.empty()
+status_display = st.empty()
 
-# App state (persistent during session)
-if "monitoring" not in st.session_state:
-    st.session_state.monitoring = False
+# Start button
+if st.button("Start Monitoring"):
+    st.success("🟢 Monitoring started. Receiving data from sensor...")
 
-# Data storage
-if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=["Time", "SpO2", "BPM"])
+    while True:
+        try:
+            data = generate_data()
 
-# Control Buttons
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("▶️ Start Monitoring", use_container_width=True):
-        st.session_state.monitoring = True
-with col2:
-    if st.button("⏹️ Stop Monitoring", use_container_width=True):
-        st.session_state.monitoring = False
+            # Expecting "97.3,82" format
+            if "," in data:
+                spo2_val, bpm_val = data.strip().split(",")
+                spo2_val = float(spo2_val)
+                bpm_val = int(bpm_val)
 
-# Alert box
-alert_box = st.empty()
+                spo2_display.metric(label="SpO2 (%)", value=f"{spo2_val:.1f} %", delta=None)
+                bpm_display.metric(label="Heart Rate (BPM)", value=f"{bpm_val} BPM", delta=None)
+                status_display.success("✅ Data received successfully.")
 
-# Metric display
-col1, col2 = st.columns(2)
-spo2_metric = col1.metric("🫁 SpO2 (%)", "—")
-bpm_metric = col2.metric("❤️ Heart Rate (BPM)", "—")
-
-# Chart area
-chart_area = st.line_chart(st.session_state.data, x="Time", y=["SpO2", "BPM"])
-
-# Loop for live update
-while st.session_state.monitoring:
-    try:
-        raw_data = generate_data()
-        if "," in raw_data:
-            spo2_str, bpm_str = raw_data.strip().split(",")
-            spo2 = float(spo2_str)
-            bpm = int(bpm_str)
-            timestamp = datetime.now().strftime("%H:%M:%S")
-
-            # Update data
-            new_row = {"Time": timestamp, "SpO2": spo2, "BPM": bpm}
-            st.session_state.data = pd.concat([st.session_state.data, pd.DataFrame([new_row])], ignore_index=True)
-
-            # Keep last 30 points
-            if len(st.session_state.data) > 30:
-                st.session_state.data = st.session_state.data.iloc[-30:]
-
-            # Update Metrics
-            spo2_metric.metric("🫁 SpO2 (%)", f"{spo2:.1f}")
-            bpm_metric.metric("❤️ Heart Rate (BPM)", f"{bpm} BPM")
-
-            # Update Chart
-            chart_area.line_chart(st.session_state.data.set_index("Time")[["SpO2", "BPM"]])
-
-            # Alert Conditions
-            if spo2 < SPO2_ALERT_THRESHOLD:
-                alert_box.error(f"⚠️ Low SpO2 detected: {spo2:.1f}%")
-            elif bpm < BPM_LOW or bpm > BPM_HIGH:
-                alert_box.warning(f"⚠️ Abnormal Heart Rate: {bpm} BPM")
             else:
-                alert_box.success("✅ Vitals are in healthy range.")
-        else:
-            alert_box.warning("⚠️ Received malformed data.")
-    except Exception as e:
-        alert_box.error(f"❌ Error reading sensor: {e}")
+                status_display.warning(f"Unexpected data format: `{data}`")
 
-    time.sleep(1)
-    st.experimental_rerun()
+        except Exception as e:
+            status_display.error(f"❌ Error reading data: {e}")
+
+        time.sleep(1)
