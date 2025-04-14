@@ -86,7 +86,4 @@ while st.session_state.monitoring:
     st.experimental_rerun()
 
 
-        except Exception as e:
-            status_display.error(f"❌ Error reading data: {e}")
-
-        time.sleep(1)
+     
