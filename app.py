@@ -2,9 +2,20 @@ import streamlit as st
 import time
 from datetime import datetime
 import pandas as pd
-from sensor_reader import read_hardware_data as generate_data
+import random
 
+# =============================
+# Simulated Data Generator
+# =============================
+def generate_data():
+    # Simulating the sensor data: SpO2 and Heart Rate
+    spo2 = round(random.uniform(88, 98), 1)
+    bpm = random.randint(60, 110)
+    return f"{spo2},{bpm}"
+
+# =============================
 # Page Config
+# =============================
 st.set_page_config(page_title="Smart Health Monitor", layout="centered")
 
 # App Title and Subtitle
@@ -12,12 +23,16 @@ st.title("🩺 Smart Band - Health Monitor")
 st.markdown("Real-time monitoring of **Oxygen Saturation (SpO2)** and **Heart Rate (BPM)**.")
 st.divider()
 
+# =============================
 # Thresholds
+# =============================
 SPO2_ALERT_THRESHOLD = 95
 BPM_LOW = 60
 BPM_HIGH = 100
 
-# App state (persistent during session)
+# =============================
+# App State (persistent during session)
+# =============================
 if "monitoring" not in st.session_state:
     st.session_state.monitoring = False
 
@@ -25,7 +40,9 @@ if "monitoring" not in st.session_state:
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=["Time", "SpO2", "BPM"])
 
+# =============================
 # Control Buttons
+# =============================
 col1, col2 = st.columns(2)
 with col1:
     if st.button("▶️ Start Monitoring", use_container_width=True):
@@ -34,21 +51,29 @@ with col2:
     if st.button("⏹️ Stop Monitoring", use_container_width=True):
         st.session_state.monitoring = False
 
-# Alert box
+# =============================
+# Alert Box
+# =============================
 alert_box = st.empty()
 
-# Metric display
+# =============================
+# Metric Display
+# =============================
 col1, col2 = st.columns(2)
 spo2_metric = col1.metric("🫁 SpO2 (%)", "—")
 bpm_metric = col2.metric("❤️ Heart Rate (BPM)", "—")
 
-# Chart area
+# =============================
+# Chart Area
+# =============================
 chart_area = st.line_chart(st.session_state.data, x="Time", y=["SpO2", "BPM"])
 
-# Loop for live update
+# =============================
+# Loop for Live Update
+# =============================
 while st.session_state.monitoring:
     try:
-        raw_data = generate_data()
+        raw_data = generate_data()  # Fetch sensor data (simulated here)
         if "," in raw_data:
             spo2_str, bpm_str = raw_data.strip().split(",")
             spo2 = float(spo2_str)
@@ -70,7 +95,9 @@ while st.session_state.monitoring:
             # Update Chart
             chart_area.line_chart(st.session_state.data.set_index("Time")[["SpO2", "BPM"]])
 
+            # =============================
             # Alert Conditions
+            # =============================
             if spo2 < SPO2_ALERT_THRESHOLD:
                 alert_box.error(f"⚠️ Low SpO2 detected: {spo2:.1f}%")
             elif bpm < BPM_LOW or bpm > BPM_HIGH:
@@ -84,6 +111,5 @@ while st.session_state.monitoring:
 
     time.sleep(1)
     st.experimental_rerun()
-
 
      
