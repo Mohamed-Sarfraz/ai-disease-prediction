@@ -1,4 +1,3 @@
-import pandas as pd
 import random
 import time
 import torch
@@ -7,45 +6,38 @@ import torch.optim as optim
 import streamlit as st
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from datetime import datetime
 
-# Define the VAE and other components here
+# =============================
+# Simulated Data Generator
+# =============================
+def generate_data():
+    return {
+        "spo2": round(random.uniform(88, 98), 1),
+        "heart_rate": random.randint(60, 110),
+        "resp_rate": random.randint(12, 24)
+    }
 
-# For real-time data visualization
+# =============================
+# Streamlit Dashboard
+# =============================
+st.title("🩺 Smart Band - ILD Patient Monitoring Dashboard")
+
+# Collect data for chart updates
 spo2_data = []
 hr_data = []
 
-# Streamlit Setup
-st.title("🩺 Smart Band - ILD Patient Monitoring Dashboard")
-spo2_chart = st.line_chart(spo2_data)
-hr_chart = st.line_chart(hr_data)
-
-# Adding dynamic updates for charts
 for _ in range(50):
-    reading = generate_data()
-    input_vals = scaler.transform([list(reading.values())])[0]
-    input_tensor = torch.tensor(input_vals, dtype=torch.float32)
-    recon, mu, logvar = vae(input_tensor)
-    loss = loss_function(recon, input_tensor, mu, logvar).item()
-    anomaly = loss > 5.0
-
-    # Collect data for charts
+    reading = generate_data()  # Generate simulated data
+    
+    # Display the data to the screen
+    st.write(f"SpO2: {reading['spo2']}%, Heart Rate: {reading['heart_rate']} BPM, Respiratory Rate: {reading['resp_rate']} breaths/min")
+    
+    # Append data for chart
     spo2_data.append(reading['spo2'])
     hr_data.append(reading['heart_rate'])
 
-    # Update charts dynamically
-    spo2_chart.line_chart(spo2_data)
-    hr_chart.line_chart(hr_data)
-
-    # Display vitals and anomaly alerts
-    col1, col2 = st.columns(2)
-    col1.metric("SpO₂ (%)", reading['spo2'])
-    col2.metric("Heart Rate (bpm)", reading['heart_rate'])
-    st.write(f"Respiratory Rate: {reading['resp_rate']} breaths/min")
-    
-    if anomaly:
-        st.error("⚠️ Anomaly Detected - Possible Desaturation! 🚨")
-    else:
-        st.success("Vitals Normal ✅")
+    # Update charts in real-time
+    st.line_chart(spo2_data, use_container_width=True)
+    st.line_chart(hr_data, use_container_width=True)
 
     time.sleep(1)
