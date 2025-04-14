@@ -110,6 +110,7 @@ while st.session_state.monitoring:
         alert_box.error(f"❌ Error reading sensor: {e}")
 
     time.sleep(1)
-    st.experimental_rerun()
+    st.rerun()
+
 
      
