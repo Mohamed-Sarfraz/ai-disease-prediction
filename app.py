@@ -1,85 +1,110 @@
-import streamlit as st
-import time
-import requests
-from flask import Flask, request, jsonify
-from threading import Thread
+# =============================
+# PART 1: Simulated Data Generator
+# =============================
+import random
 import pandas as pd
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import streamlit as st
+import numpy as np
+import time
+from sklearn.preprocessing import MinMaxScaler
 
-# Initialize Flask app
-app = Flask(__name__)
+def generate_data():
+    return {
+        "spo2": round(random.uniform(88, 98), 1),
+        "heart_rate": random.randint(60, 110),
+        "resp_rate": random.randint(12, 24)
+    }
 
-# Data storage
-data = pd.DataFrame(columns=["Time", "SpO2", "BPM"])
+# =============================
+# PART 2: VAE Model
+# =============================
+class VAE(nn.Module):
+    def __init__(self, input_dim=3, latent_dim=2):
+        super(VAE, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 16)
+        self.fc21 = nn.Linear(16, latent_dim)
+        self.fc22 = nn.Linear(16, latent_dim)
+        self.fc3 = nn.Linear(latent_dim, 16)
+        self.fc4 = nn.Linear(16, input_dim)
 
-# Set up the Streamlit app
-st.set_page_config(page_title="Smart Health Monitor", layout="centered")
-st.title("🩺 Smart Band - Health Monitor")
-st.markdown("Real-time monitoring of **Oxygen Saturation (SpO2)** and **Heart Rate (BPM)**.")
+    def encode(self, x):
+        h1 = torch.relu(self.fc1(x))
+        return self.fc21(h1), self.fc22(h1)
 
-# Thresholds
-SPO2_ALERT_THRESHOLD = 95
-BPM_LOW = 60
-BPM_HIGH = 100
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
 
-# Data display
-col1, col2 = st.columns(2)
-spo2_metric = col1.metric("🫁 SpO2 (%)", "—")
-bpm_metric = col2.metric("❤️ Heart Rate (BPM)", "—")
+    def decode(self, z):
+        h3 = torch.relu(self.fc3(z))
+        return self.fc4(h3)
 
-# Chart area
-chart_area = st.line_chart(data, x="Time", y=["SpO2", "BPM"])
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return self.decode(z), mu, logvar
 
-# Flask route to handle data from ESP32
-@app.route('/data', methods=['POST'])
-def receive_data():
-    global data
-    if request.method == 'POST':
-        # Get data from the ESP32
-        sensor_data = request.get_json()
-        spo2 = sensor_data.get('spo2')
-        bpm = sensor_data.get('bpm')
+def loss_function(recon_x, x, mu, logvar):
+    BCE = nn.functional.mse_loss(recon_x, x, reduction='sum')
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return BCE + KLD
 
-        # Get current timestamp
-        timestamp = time.strftime('%H:%M:%S')
+# =============================
+# PART 3: Training VAE Model
+# =============================
+scaler = MinMaxScaler()
+data = np.array([list(generate_data().values()) for _ in range(1000)])
+data = scaler.fit_transform(data)
 
-        # Update data
-        new_row = {"Time": timestamp, "SpO2": spo2, "BPM": bpm}
-        data = data.append(new_row, ignore_index=True)
-        
-        # Keep last 30 points
-        if len(data) > 30:
-            data = data.tail(30)
+vae = VAE()
+optimizer = optim.Adam(vae.parameters(), lr=0.001)
 
-        # Update metrics
-        spo2_metric.metric("🫁 SpO2 (%)", f"{spo2:.1f}")
-        bpm_metric.metric("❤️ Heart Rate (BPM)", f"{bpm} BPM")
+def train_vae(model, data, epochs=10):
+    for epoch in range(epochs):
+        total_loss = 0
+        for x in data:
+            x = torch.tensor(x, dtype=torch.float32)
+            optimizer.zero_grad()
+            recon, mu, logvar = model(x)
+            loss = loss_function(recon, x, mu, logvar)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        print(f"Epoch {epoch+1}: Loss = {total_loss:.2f}")
 
-        # Update chart
-        chart_area.line_chart(data.set_index("Time")[["SpO2", "BPM"]])
+train_vae(vae, data)
 
-        # Check for alert conditions
-        if spo2 < SPO2_ALERT_THRESHOLD:
-            st.warning(f"⚠️ Low SpO2 detected: {spo2:.1f}%")
-        elif bpm < BPM_LOW or bpm > BPM_HIGH:
-            st.warning(f"⚠️ Abnormal Heart Rate: {bpm} BPM")
-        else:
-            st.success("✅ Vitals are in healthy range.")
-        
-        return jsonify({"status": "success"})
+# =============================
+# PART 4: Streamlit Real-Time Dashboard
+# =============================
+st.title("🩺 Smart Band - ILD Patient Monitoring Dashboard")
+spo2_vals, hr_vals, rr_vals, alerts = [], [], [], []
 
-# Function to run Flask app in a background thread
-def run_flask():
-    app.run(host="0.0.0.0", port=5000)
+for _ in range(50):
+    reading = generate_data()
+    input_vals = scaler.transform([list(reading.values())])[0]
+    input_tensor = torch.tensor(input_vals, dtype=torch.float32)
+    recon, mu, logvar = vae(input_tensor)
+    loss = loss_function(recon, input_tensor, mu, logvar).item()
+    anomaly = loss > 5.0
 
-# Start Flask app in the background
-Thread(target=run_flask, daemon=True).start()
+    spo2_vals.append(reading['spo2'])
+    hr_vals.append(reading['heart_rate'])
+    rr_vals.append(reading['resp_rate'])
+    alerts.append(anomaly)
 
-# Streamlit loop to keep the app alive
-while True:
+    col1, col2 = st.columns(2)
+    col1.metric("SpO₂ (%)", reading['spo2'])
+    col2.metric("Heart Rate (bpm)", reading['heart_rate'])
+    st.write(f"Respiratory Rate: {reading['resp_rate']} breaths/min")
+    
+    if anomaly:
+        st.error("⚠️ Anomaly Detected - Possible Desaturation! 🚨")
+    else:
+        st.success("Vitals Normal ✅")
+
     time.sleep(1)
-    st.experimental_rerun()
-
-        alert_box.error(f"❌ Error reading sensor: {e}")
-
-    time.sleep(1)
-    st.rerun()
