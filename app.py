@@ -1,25 +1,20 @@
 # =============================
-# PART 1: Simulated Data Generator
+# APP.PY – Smart Band Dashboard with Sensor Data
 # =============================
+
+import streamlit as st
 import random
+import time
 import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import streamlit as st
-import numpy as np
-import time
 from sklearn.preprocessing import MinMaxScaler
-
-def generate_data():
-    return {
-        "spo2": round(random.uniform(88, 98), 1),
-        "heart_rate": random.randint(60, 110),
-        "resp_rate": random.randint(12, 24)
-    }
+from sensor_reader import read_hardware_data as generate_data  # <-- live sensor!
 
 # =============================
-# PART 2: VAE Model
+# VAE Model
 # =============================
 class VAE(nn.Module):
     def __init__(self, input_dim=3, latent_dim=2):
@@ -54,11 +49,11 @@ def loss_function(recon_x, x, mu, logvar):
     return BCE + KLD
 
 # =============================
-# PART 3: Training VAE Model
+# Train VAE on Dummy Data (initial)
 # =============================
 scaler = MinMaxScaler()
-data = np.array([list(generate_data().values()) for _ in range(1000)])
-data = scaler.fit_transform(data)
+training_data = np.array([[random.uniform(90, 98), random.randint(60, 90), random.randint(12, 20)] for _ in range(500)])
+training_data = scaler.fit_transform(training_data)
 
 vae = VAE()
 optimizer = optim.Adam(vae.parameters(), lr=0.001)
@@ -76,35 +71,51 @@ def train_vae(model, data, epochs=10):
             total_loss += loss.item()
         print(f"Epoch {epoch+1}: Loss = {total_loss:.2f}")
 
-train_vae(vae, data)
+train_vae(vae, training_data)
 
 # =============================
-# PART 4: Streamlit Real-Time Dashboard
+# Streamlit Dashboard UI
 # =============================
+st.set_page_config(page_title="Smart Band - Health Monitor", layout="centered")
 st.title("🩺 Smart Band - ILD Patient Monitoring Dashboard")
+st.markdown("Live vitals from MAX30102 sensor + AI anomaly detection")
+
+placeholder = st.empty()
 spo2_vals, hr_vals, rr_vals, alerts = [], [], [], []
 
-for _ in range(50):
-    reading = generate_data()
-    input_vals = scaler.transform([list(reading.values())])[0]
-    input_tensor = torch.tensor(input_vals, dtype=torch.float32)
-    recon, mu, logvar = vae(input_tensor)
-    loss = loss_function(recon, input_tensor, mu, logvar).item()
-    anomaly = loss > 5.0
+for i in range(50):
+    try:
+        data = generate_data()
+        spo2 = data['spo2']
+        hr = data['heart_rate']
+        rr = data['resp_rate']
 
-    spo2_vals.append(reading['spo2'])
-    hr_vals.append(reading['heart_rate'])
-    rr_vals.append(reading['resp_rate'])
-    alerts.append(anomaly)
+        input_vals = scaler.transform([[spo2, hr, rr]])[0]
+        input_tensor = torch.tensor(input_vals, dtype=torch.float32)
+        recon, mu, logvar = vae(input_tensor)
+        loss = loss_function(recon, input_tensor, mu, logvar).item()
+        anomaly = loss > 5.0
 
-    col1, col2 = st.columns(2)
-    col1.metric("SpO₂ (%)", reading['spo2'])
-    col2.metric("Heart Rate (bpm)", reading['heart_rate'])
-    st.write(f"Respiratory Rate: {reading['resp_rate']} breaths/min")
-    
-    if anomaly:
-        st.error("⚠️ Anomaly Detected - Possible Desaturation! 🚨")
-    else:
-        st.success("Vitals Normal ✅")
+        # Save to lists
+        spo2_vals.append(spo2)
+        hr_vals.append(hr)
+        rr_vals.append(rr)
+        alerts.append(anomaly)
 
-    time.sleep(1)
+        # Display in UI
+        with placeholder.container():
+            col1, col2 = st.columns(2)
+            col1.metric("SpO₂ (%)", f"{spo2:.1f}")
+            col2.metric("Heart Rate (bpm)", f"{hr:.1f}")
+            st.write(f"Respiratory Rate: {rr} breaths/min")
+
+            if anomaly:
+                st.error("⚠️ Anomaly Detected - Possible Desaturation! 🚨")
+            else:
+                st.success("Vitals Normal ✅")
+
+        time.sleep(1)
+
+    except Exception as e:
+        st.error(f"❌ Error reading sensor: {e}")
+
