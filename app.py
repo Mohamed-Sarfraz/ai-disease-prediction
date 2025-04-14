@@ -145,4 +145,3 @@ while st.session_state.monitoring:
 
     time.sleep(1)
     st.rerun()
-
