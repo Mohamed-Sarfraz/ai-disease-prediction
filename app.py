@@ -10,6 +10,8 @@ import streamlit as st
 import numpy as np
 import time
 from sklearn.preprocessing import MinMaxScaler
+from sensor_reader import read_hardware_data as generate_data
+
 
 def generate_data():
     return {
